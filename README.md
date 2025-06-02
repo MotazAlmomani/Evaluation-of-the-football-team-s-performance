@@ -1,58 +1,42 @@
-# -- coding: utf-8 --
-
 import pandas as pd
 import ipywidgets as widgets
-from IPython.display import display, clear_output
-from dataclasses import dataclass, field
-from typing import List, Literal
-import matplotlib.pyplot as plt
+from IPython.display import display, clear_output, FileLink
+from dataclasses import dataclass, field, asdict
+from typing import List
+import os
+from uuid import uuid4
+import io
 
-try:
-    import ipyaggrid as ipg
-    TABLE_LIB = "ipyaggrid"
-except ImportError:
-    try:
-        import qgrid
-        TABLE_LIB = "qgrid"
-    except ImportError:
-        TABLE_LIB = "pandas"
-
-LANG = 'ar'
-
+# النصوص حسب اللغة
 TEXTS = {
     'ar': {
         'name': 'الاسم',
         'position': 'المركز',
-        'cards': 'البطاقة',
-        'interceptions': 'التدخلات',
-        'defending': 'الدفاع',
+        'cards': 'البطاقات',
+        'interceptions': 'التدخلات الناجحة',
+        'defending': 'الدفاع عن المرمى',
         'blocks': 'اعتراض المهاجمين',
-        'goal_prevention': 'منع الأهداف السلبية',
+        'goal_prevention': 'حراسة المرمى',
         'negative_goals': 'الأهداف السلبية',
         'passes': 'التمريرات',
-        'assists': 'صناعة الهدف',
+        'assists': 'صناعة الأهداف',
         'shots': 'التسديدات',
         'goals': 'الأهداف',
         'matches': 'عدد المباريات',
         'add_player': 'إضافة لاعب',
         'show_table': 'عرض اللاعبين',
-        'clear_all': 'مسح جميع اللاعبين',
-        'import_file': 'استيراد ملف',
-        'export_file': 'تصدير ملف',
-        'avg_rating': 'متوسط التقييم',
-        'edit': 'تعديل',
-        'delete': 'حذف',
-        'validation_error': '⚠ يرجى إدخال الاسم والمركز.',
-        'player_added': '✅ تم إضافة اللاعب: ',
-        'all_cleared': 'تم مسح جميع اللاعبين.',
-        'load_success': '✅ تم تحميل البيانات من الملف.',
-        'file_not_found': 'ملف غير موجود.',
-        'no_players': 'لا يوجد لاعبين لعرضهم.',
-        'rating': 'التقييم النهائي',
-        'rating_desc': ['سيء جدًا', 'سيء', 'متوسط', 'جيد', 'جيد جدًا', 'ممتاز'],
+        'clear_all': 'مسح الكل',
+        'validation_error': '⚠ الرجاء إدخال الاسم والمركز',
+        'no_players': 'لا يوجد لاعبين',
+        'rating': 'التقييم',
         'position_choices': ['حارس', 'مدافع', 'وسط', 'مهاجم'],
         'card_choices': ['لا بطاقة', 'بطاقة صفراء', 'بطاقة حمراء'],
-        'view_chart': 'رسم بياني',
+        'language': 'اللغة',
+        'export': 'تصدير',
+        'import': 'استيراد',
+        'export_success': 'تم تصدير البيانات إلى الملف:',
+        'import_success': 'تم استيراد {} لاعب/لاعبة بنجاح',
+        'file_select_error': '⚠ يرجى اختيار ملف صحيح'
     },
     'en': {
         'name': 'Name',
@@ -60,7 +44,7 @@ TEXTS = {
         'cards': 'Cards',
         'interceptions': 'Interceptions',
         'defending': 'Defending',
-        'blocks': 'Attacker Blocks',
+        'blocks': 'Blocks',
         'goal_prevention': 'Goal Prevention',
         'negative_goals': 'Negative Goals',
         'passes': 'Passes',
@@ -70,291 +54,302 @@ TEXTS = {
         'matches': 'Matches',
         'add_player': 'Add Player',
         'show_table': 'Show Players',
-        'clear_all': 'Clear All Players',
-        'import_file': 'Import File',
-        'export_file': 'Export File',
-        'avg_rating': 'Average Rating',
-        'edit': 'Edit',
-        'delete': 'Delete',
-        'validation_error': '⚠ Please enter Name and Position.',
-        'player_added': '✅ Player added: ',
-        'all_cleared': 'All players cleared.',
-        'load_success': '✅ Data loaded from file.',
-        'file_not_found': 'File not found.',
-        'no_players': 'No players to show.',
-        'rating': 'Final Rating',
-        'rating_desc': ['Very Poor', 'Poor', 'Average', 'Good', 'Very Good', 'Excellent'],
+        'clear_all': 'Clear All',
+        'validation_error': '⚠ Please enter Name and Position',
+        'no_players': 'No players',
+        'rating': 'Rating',
         'position_choices': ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
         'card_choices': ['No Card', 'Yellow Card', 'Red Card'],
-        'view_chart': 'View Chart',
+        'language': 'Language',
+        'export': 'Export',
+        'import': 'Import',
+        'export_success': 'Data exported to file:',
+        'import_success': '{} players imported successfully',
+        'file_select_error': '⚠ Please select a valid file'
     }
 }
 
-T = TEXTS[LANG]
+current_lang = 'en'
+
+def get_text(key):
+    return TEXTS[current_lang][key]
 
 @dataclass
 class Player:
     name: str
-    position: Literal['حارس', 'مدافع', 'وسط', 'مهاجم', 'Goalkeeper', 'Defender', 'Midfielder', 'Forward']
-    card: Literal['لا بطاقة', 'بطاقة صفراء', 'بطاقة حمراء', 'No Card', 'Yellow Card', 'Red Card']
+    position: str
+    card: str
     interceptions: int
-    passes: int
-    assists: int
-    shots: int
-    goals: int
     defending: int
     blocks: int
     goal_prevention: int
     negative_goals: int
+    passes: int
+    assists: int
+    shots: int
+    goals: int
     matches: int
     rating: float = field(init=False, default=0.0)
 
-    def calculate_rating(self):
-        weights = {
-            'حارس': {'goals': 0, 'assists': 0.2, 'passes': 0.5, 'interceptions': 0.7, 'shots': 0,
-                     'defending': 2.0, 'blocks': 0.5, 'goal_prevention': 3.0, 'negative_goals': -2.0, 'cards': -1},
-            'مدافع': {'goals': 0.5, 'assists': 0.4, 'passes': 0.6, 'interceptions': 2.0, 'shots': 0.3,
-                     'defending': 1.8, 'blocks': 2.5, 'goal_prevention': 1.0, 'negative_goals': -1.5, 'cards': -1.5},
-            'وسط': {'goals': 1.2, 'assists': 1.5, 'passes': 1.2, 'interceptions': 1.0, 'shots': 0.8,
-                    'defending': 1.0, 'blocks': 1.0, 'goal_prevention': 0.5, 'negative_goals': -1.0, 'cards': -2},
-            'مهاجم': {'goals': 2.0, 'assists': 1.0, 'passes': 0.6, 'interceptions': 0.5, 'shots': 1.7,
-                    'defending': 0.2, 'blocks': 0.3, 'goal_prevention': 0.1, 'negative_goals': -3.0, 'cards': -3},
-            'Goalkeeper': {'goals': 0, 'assists': 0.2, 'passes': 0.5, 'interceptions': 0.7, 'shots': 0,
-                           'defending': 2.0, 'blocks': 0.5, 'goal_prevention': 3.0, 'negative_goals': -2.0, 'cards': -1},
-            'Defender': {'goals': 0.5, 'assists': 0.4, 'passes': 0.6, 'interceptions': 2.0, 'shots': 0.3,
-                         'defending': 1.8, 'blocks': 2.5, 'goal_prevention': 1.0, 'negative_goals': -1.5, 'cards': -1.5},
-            'Midfielder': {'goals': 1.2, 'assists': 1.5, 'passes': 1.2, 'interceptions': 1.0, 'shots': 0.8,
-                           'defending': 1.0, 'blocks': 1.0, 'goal_prevention': 0.5, 'negative_goals': -1.0, 'cards': -2},
-            'Forward': {'goals': 2.0, 'assists': 1.0, 'passes': 0.6, 'interceptions': 0.5, 'shots': 1.7,
-                        'defending': 0.2, 'blocks': 0.3, 'goal_prevention': 0.1, 'negative_goals': -3.0, 'cards': -3},
+    def calc_rating(self):
+        w = {
+            'Goalkeeper': {'goals':0, 'assists':0.1, 'passes':0.3, 'interceptions':0.7, 'shots':0, 'defending':1.5, 'blocks':0.7, 'goal_prevention':2.0, 'negative_goals':-2.5, 'cards':-1},
+            'Defender': {'goals':0.3, 'assists':0.5, 'passes':0.6, 'interceptions':1.2, 'shots':0.1, 'defending':1.0, 'blocks':1.5, 'goal_prevention':0.7, 'negative_goals':-1.5, 'cards':-1},
+            'Midfielder': {'goals':1.0, 'assists':1.0, 'passes':1.2, 'interceptions':0.8, 'shots':0.6, 'defending':0.5, 'blocks':0.5, 'goal_prevention':0.3, 'negative_goals':-1.0, 'cards':-1.5},
+            'Forward': {'goals':2.0, 'assists':1.5, 'passes':0.5, 'interceptions':0.2, 'shots':1.5, 'defending':0.1, 'blocks':0.1, 'goal_prevention':0.1, 'negative_goals':-0.5, 'cards':-2},
+            'حارس': {'goals':0, 'assists':0.1, 'passes':0.3, 'interceptions':0.7, 'shots':0, 'defending':1.5, 'blocks':0.7, 'goal_prevention':2.0, 'negative_goals':-2.5, 'cards':-1},
+            'مدافع': {'goals':0.3, 'assists':0.5, 'passes':0.6, 'interceptions':1.2, 'shots':0.1, 'defending':1.0, 'blocks':1.5, 'goal_prevention':0.7, 'negative_goals':-1.5, 'cards':-1},
+            'وسط': {'goals':1.0, 'assists':1.0, 'passes':1.2, 'interceptions':0.8, 'shots':0.6, 'defending':0.5, 'blocks':0.5, 'goal_prevention':0.3, 'negative_goals':-1.0, 'cards':-1.5},
+            'مهاجم': {'goals':2.0, 'assists':1.5, 'passes':0.5, 'interceptions':0.2, 'shots':1.5, 'defending':0.1, 'blocks':0.1, 'goal_prevention':0.1, 'negative_goals':-0.5, 'cards':-2},
         }
-        w = weights[self.position]
-
+        weights = w[self.position]
         card_penalty = 0
         if self.card in ['بطاقة صفراء', 'Yellow Card']:
-            card_penalty = w['cards'] * 1
+            card_penalty = weights['cards'] * 1
         elif self.card in ['بطاقة حمراء', 'Red Card']:
-            card_penalty = w['cards'] * 3
+            card_penalty = weights['cards'] * 3
 
-        self.rating = max(0, round(
-            self.goals * w['goals'] +
-            self.assists * w['assists'] +
-            self.passes * w['passes'] +
-            self.interceptions * w['interceptions'] +
-            self.shots * w['shots'] +
-            self.defending * w['defending'] +
-            self.blocks * w['blocks'] +
-            self.goal_prevention * w['goal_prevention'] +
-            self.negative_goals * w['negative_goals'] +
-            card_penalty, 2
-        ))
-
-def rating_description(score: float) -> str:
-    # مقياس توضيحي حسب التقييم من 0 إلى 20 (مثلاً)
-    if score < 4:
-        return T['rating_desc'][0]  # سيء جدًا
-    elif score < 8:
-        return T['rating_desc'][1]  # سيء
-    elif score < 12:
-        return T['rating_desc'][2]  # متوسط
-    elif score < 16:
-        return T['rating_desc'][3]  # جيد
-    elif score < 18:
-        return T['rating_desc'][4]  # جيد جدًا
-    else:
-        return T['rating_desc'][5]  # ممتاز
-
-# القائمة الرئيسية والواجهة
+        raw = (
+            self.goals * weights['goals'] + 
+            self.assists * weights['assists'] +
+            self.passes * weights['passes'] +
+            self.interceptions * weights['interceptions'] +
+            self.shots * weights['shots'] +
+            self.defending * weights['defending'] +
+            self.blocks * weights['blocks'] +
+            self.goal_prevention * weights['goal_prevention'] +
+            self.negative_goals * weights['negative_goals'] +
+            card_penalty
+        )
+        self.rating = max(0, round(raw / max(1, self.matches), 2))
 
 players: List[Player] = []
 
-inputs = {}
+language_dropdown = widgets.Dropdown(
+    options=[('English', 'en'), ('العربية', 'ar')],
+    value=current_lang,
+    description='🌐'
+)
 
-def build_inputs():
-    inputs['name'] = widgets.Text(description=T['name'], layout=widgets.Layout(width='300px'))
-    inputs['position'] = widgets.Dropdown(options=T['position_choices'], description=T['position'], layout=widgets.Layout(width='300px'))
-    inputs['card'] = widgets.Dropdown(options=T['card_choices'], description=T['cards'], layout=widgets.Layout(width='300px'))
-    inputs['interceptions'] = widgets.BoundedIntText(value=0, min=0, max=100, description=T['interceptions'], layout=widgets.Layout(width='300px'))
-    inputs['defending'] = widgets.BoundedIntText(value=0, min=0, max=10, description=T['defending'], layout=widgets.Layout(width='300px'))
-    inputs['blocks'] = widgets.BoundedIntText(value=0, min=0, max=10, description=T['blocks'], layout=widgets.Layout(width='300px'))
-    inputs['goal_prevention'] = widgets.BoundedIntText(value=0, min=0, max=10, description=T['goal_prevention'], layout=widgets.Layout(width='300px'))
-    inputs['negative_goals'] = widgets.BoundedIntText(value=0, min=0, max=10, description=T['negative_goals'], layout=widgets.Layout(width='300px'))
-    inputs['passes'] = widgets.BoundedIntText(value=0, min=0, max=1000, description=T['passes'], layout=widgets.Layout(width='300px'))
-    inputs['assists'] = widgets.BoundedIntText(value=0, min=0, max=1000, description=T['assists'], layout=widgets.Layout(width='300px'))
-    inputs['shots'] = widgets.BoundedIntText(value=0, min=0, max=1000, description=T['shots'], layout=widgets.Layout(width='300px'))
-    inputs['goals'] = widgets.BoundedIntText(value=0, min=0, max=1000, description=T['goals'], layout=widgets.Layout(width='300px'))
-    inputs['matches'] = widgets.BoundedIntText(value=1, min=1, max=1000, description=T['matches'], layout=widgets.Layout(width='300px'))
+# تعريف عناصر الإدخال كما كانت (اختصرنا هنا لمثال فقط)
 
-def add_player(_):
-    clear_output(wait=True)
-    if not inputs['name'].value or not inputs['position'].value:
-        print(T['validation_error'])
-        display(ui)
-        return
+name_text = widgets.Text(description=get_text('name'))
+position_dropdown = widgets.Dropdown(options=get_text('position_choices'), description=get_text('position'))
+cards_dropdown = widgets.Dropdown(options=get_text('card_choices'), description=get_text('cards'))
+interceptions_int = widgets.BoundedIntText(min=0, max=100, description=get_text('interceptions'))
+defending_int = widgets.BoundedIntText(min=0, max=100, description=get_text('defending'))
+blocks_int = widgets.BoundedIntText(min=0, max=100, description=get_text('blocks'))
+goal_prevention_int = widgets.BoundedIntText(min=0, max=100, description=get_text('goal_prevention'))
+negative_goals_int = widgets.BoundedIntText(min=0, max=100, description=get_text('negative_goals'))
+passes_int = widgets.BoundedIntText(min=0, max=100, description=get_text('passes'))
+assists_int = widgets.BoundedIntText(min=0, max=100, description=get_text('assists'))
+shots_int = widgets.BoundedIntText(min=0, max=100, description=get_text('shots'))
+goals_int = widgets.BoundedIntText(min=0, max=100, description=get_text('goals'))
+matches_int = widgets.BoundedIntText(min=1, max=100, description=get_text('matches'))
 
-    player = Player(
-        name=inputs['name'].value,
-        position=inputs['position'].value,
-        card=inputs['card'].value,
-        interceptions=inputs['interceptions'].value,
-        defending=inputs['defending'].value,
-        blocks=inputs['blocks'].value,
-        goal_prevention=inputs['goal_prevention'].value,
-        negative_goals=inputs['negative_goals'].value,
-        passes=inputs['passes'].value,
-        assists=inputs['assists'].value,
-        shots=inputs['shots'].value,
-        goals=inputs['goals'].value,
-        matches=inputs['matches'].value,
-    )
-    player.calculate_rating()
-    players.append(player)
-    print(f"{T['player_added']}{player.name} - {T['rating']}: {player.rating} ({rating_description(player.rating)})")
-    display(ui)
+add_button = widgets.Button(description=get_text('add_player'), button_style='success')
+show_button = widgets.Button(description=get_text('show_table'), button_style='info')
+clear_button = widgets.Button(description=get_text('clear_all'), button_style='warning')
 
-def show_players(_):
-    clear_output(wait=True)
-    if not players:
-        print(T['no_players'])
-        display(ui)
-        return
+export_button = widgets.Button(description=get_text('export'), button_style='primary')
+import_button = widgets.FileUpload(accept='.xlsx', multiple=False)
 
-    df = pd.DataFrame([{
-        T['name']: p.name,
-        T['position']: p.position,
-        T['cards']: p.card,
-        T['interceptions']: p.interceptions,
-        T['defending']: p.defending,
-        T['blocks']: p.blocks,
-        T['goal_prevention']: p.goal_prevention,
-        T['negative_goals']: p.negative_goals,
-        T['passes']: p.passes,
-        T['assists']: p.assists,
-        T['shots']: p.shots,
-        T['goals']: p.goals,
-        T['matches']: p.matches,
-        T['rating']: f"{p.rating} ({rating_description(p.rating)})"
-    } for p in players])
-    
-    display(df)
-    display(ui)
+output = widgets.Output()
 
-def clear_all(_):
-    clear_output(wait=True)
+def refresh_labels():
+    # لتحديث النصوص عند تغيير اللغة
+    name_text.description = get_text('name')
+    position_dropdown.description = get_text('position')
+    position_dropdown.options = get_text('position_choices')
+    cards_dropdown.description = get_text('cards')
+    cards_dropdown.options = get_text('card_choices')
+    interceptions_int.description = get_text('interceptions')
+    defending_int.description = get_text('defending')
+    blocks_int.description = get_text('blocks')
+    goal_prevention_int.description = get_text('goal_prevention')
+    negative_goals_int.description = get_text('negative_goals')
+    passes_int.description = get_text('passes')
+    assists_int.description = get_text('assists')
+    shots_int.description = get_text('shots')
+    goals_int.description = get_text('goals')
+    matches_int.description = get_text('matches')
+    add_button.description = get_text('add_player')
+    show_button.description = get_text('show_table')
+    clear_button.description = get_text('clear_all')
+    export_button.description = get_text('export')
+
+def add_player_clicked(_):
+    with output:
+        clear_output()
+        if not name_text.value.strip() or not position_dropdown.value:
+            print(get_text('validation_error'))
+            return
+        try:
+            p = Player(
+                name=name_text.value.strip(),
+                position=position_dropdown.value,
+                card=cards_dropdown.value,
+                interceptions=interceptions_int.value,
+                defending=defending_int.value,
+                blocks=blocks_int.value,
+                goal_prevention=goal_prevention_int.value,
+                negative_goals=negative_goals_int.value,
+                passes=passes_int.value,
+                assists=assists_int.value,
+                shots=shots_int.value,
+                goals=goals_int.value,
+                matches=matches_int.value
+            )
+            p.calc_rating()
+            players.append(p)
+            print(f"✅ {p.name} added.")
+            clear_inputs()
+        except Exception as e:
+            print(f"Error: {e}")
+
+def clear_inputs():
+    name_text.value = ''
+    position_dropdown.value = get_text('position_choices')[0]
+    cards_dropdown.value = get_text('card_choices')[0]
+    interceptions_int.value = 0
+    defending_int.value = 0
+    blocks_int.value = 0
+    goal_prevention_int.value = 0
+    negative_goals_int.value = 0
+    passes_int.value = 0
+    assists_int.value = 0
+    shots_int.value = 0
+    goals_int.value = 0
+    matches_int.value = 1
+
+def show_players_table():
+    with output:
+        clear_output()
+        if not players:
+            print(get_text('no_players'))
+            return
+        df = pd.DataFrame([{
+            get_text('name'): p.name,
+            get_text('position'): p.position,
+            get_text('cards'): p.card,
+            get_text('interceptions'): p.interceptions,
+            get_text('defending'): p.defending,
+            get_text('blocks'): p.blocks,
+            get_text('goal_prevention'): p.goal_prevention,
+            get_text('negative_goals'): p.negative_goals,
+            get_text('passes'): p.passes,
+            get_text('assists'): p.assists,
+            get_text('shots'): p.shots,
+            get_text('goals'): p.goals,
+            get_text('matches'): p.matches,
+            get_text('rating'): p.rating
+        } for p in players])
+        display(df)
+
+def clear_all_clicked(_):
     players.clear()
-    print(T['all_cleared'])
-    display(ui)
+    with output:
+        clear_output()
+        print(get_text('no_players'))
 
-def export_file(_):
-    if not players:
-        print(T['no_players'])
-        display(ui)
-        return
-    df = pd.DataFrame([{
-        'name': p.name,
-        'position': p.position,
-        'card': p.card,
-        'interceptions': p.interceptions,
-        'defending': p.defending,
-        'blocks': p.blocks,
-        'goal_prevention': p.goal_prevention,
-        'negative_goals': p.negative_goals,
-        'passes': p.passes,
-        'assists': p.assists,
-        'shots': p.shots,
-        'goals': p.goals,
-        'matches': p.matches,
-        'rating': p.rating,
-    } for p in players])
-    df.to_excel('players_export.xlsx', index=False)
-    print('✅ تم تصدير البيانات إلى ملف players_export.xlsx')
-    display(ui)
+def export_players_clicked(_):
+    with output:
+        clear_output()
+        if not players:
+            print(get_text('no_players'))
+            return
+        # تحويل بيانات اللاعبين إلى DataFrame مع الحقول المترجمة للعربية أو الانجليزية
+        df = pd.DataFrame([{
+            'Name': p.name,
+            'Position': p.position,
+            'Cards': p.card,
+            'Interceptions': p.interceptions,
+            'Defending': p.defending,
+            'Blocks': p.blocks,
+            'Goal Prevention': p.goal_prevention,
+            'Negative Goals': p.negative_goals,
+            'Passes': p.passes,
+            'Assists': p.assists,
+            'Shots': p.shots,
+            'Goals': p.goals,
+            'Matches': p.matches,
+            'Rating': p.rating
+        } for p in players])
+        filename = f"players_{uuid4().hex}.xlsx"
+        df.to_excel(filename, index=False)
+        print(f"📦 {get_text('export_success')} {filename}")
+        display(FileLink(filename))
 
-def import_file(_):
-    try:
-        df = pd.read_excel('players_export.xlsx')
-    except FileNotFoundError:
-        print(T['file_not_found'])
-        display(ui)
-        return
-    
-    players.clear()
-    for _, row in df.iterrows():
-        player = Player(
-            name=row['name'],
-            position=row['position'],
-            card=row['card'],
-            interceptions=int(row['interceptions']),
-            defending=int(row['defending']),
-            blocks=int(row['blocks']),
-            goal_prevention=int(row['goal_prevention']),
-            negative_goals=int(row['negative_goals']),
-            passes=int(row['passes']),
-            assists=int(row['assists']),
-            shots=int(row['shots']),
-            goals=int(row['goals']),
-            matches=int(row['matches']),
-        )
-        player.calculate_rating()
-        players.append(player)
-    clear_output(wait=True)
-    print(T['load_success'])
-    display(ui)
+def import_players_changed(change):
+    with output:
+        clear_output()
+        try:
+            if not import_button.value:
+                print(get_text('file_select_error'))
+                return
+            # نحصل على الملف (الملف الأول فقط)
+            uploaded_filename = next(iter(import_button.value))
+            content = import_button.value[uploaded_filename]['content']
+            # نقرأ الملف إكسل من الذاكرة
+            excel_data = pd.read_excel(io.BytesIO(content))
+            players.clear()
+            for _, row in excel_data.iterrows():
+                try:
+                    p = Player(
+                        name=str(row['Name']),
+                        position=str(row['Position']),
+                        card=str(row['Cards']),
+                        interceptions=int(row['Interceptions']),
+                        defending=int(row['Defending']),
+                        blocks=int(row['Blocks']),
+                        goal_prevention=int(row['Goal Prevention']),
+                        negative_goals=int(row['Negative Goals']),
+                        passes=int(row['Passes']),
+                        assists=int(row['Assists']),
+                        shots=int(row['Shots']),
+                        goals=int(row['Goals']),
+                        matches=int(row['Matches'])
+                    )
+                    p.calc_rating()
+                    players.append(p)
+                except Exception as e:
+                    # إذا كان هناك خطأ في صف معين نستمر بالصفوف الأخرى
+                    pass
+            print(get_text('import_success').format(len(players)))
+            show_players_table()
+        except Exception as e:
+            print(f"Error: {e}")
 
-def show_chart(_):
-    clear_output(wait=True)
-    if not players:
-        print(T['no_players'])
-        display(ui)
-        return
+def on_language_change(change):
+    global current_lang
+    current_lang = change['new']
+    refresh_labels()
 
-    # لرسم بيانات اللاعب الأول كمثال
-    p = players[-1]  # آخر لاعب مضاف
-    categories = [T['goals'], T['assists'], T['passes'], T['interceptions'], T['defending'], T['blocks'], T['goal_prevention'], T['negative_goals']]
-    values = [p.goals, p.assists, p.passes, p.interceptions, p.defending, p.blocks, p.goal_prevention, p.negative_goals]
+language_dropdown.observe(on_language_change, names='value')
 
-    plt.figure(figsize=(7,7))
-    ax = plt.subplot(111, polar=True)
-    angles = [n / float(len(categories)) * 2 * 3.14159 for n in range(len(categories))]
-    values += values[:1]  # إغلاق الدائرة
-    angles += angles[:1]
-    ax.plot(angles, values, 'o-', linewidth=2)
-    ax.fill(angles, values, alpha=0.25)
-    ax.set_thetagrids([a * 180/3.14159 for a in angles[:-1]], categories)
-    ax.set_ylim(0, 10)
-    plt.title(f"{T['view_chart']} - {p.name}")
-    plt.show()
-    display(ui)
+add_button.on_click(add_player_clicked)
+show_button.on_click(lambda _: show_players_table())
+clear_button.on_click(clear_all_clicked)
+export_button.on_click(export_players_clicked)
+import_button.observe(import_players_changed, names='value')
 
-# بناء الواجهة
-build_inputs()
+# ضبط القيم الابتدائية
+clear_inputs()
+refresh_labels()
 
-# بناء الواجهة
-build_inputs()
+# ترتيب عرض العناصر في الواجهة مع أزرار التصدير والاستيراد
+buttons_box = widgets.HBox([
+    add_button, show_button, clear_button,
+    export_button, import_button,
+    language_dropdown
+], layout=widgets.Layout(margin='10px 0 0 0'))
 
-btn_add = widgets.Button(description=T['add_player'], button_style='success')
-btn_show = widgets.Button(description=T['show_table'], button_style='info')
-btn_clear = widgets.Button(description=T['clear_all'], button_style='warning')
-btn_import = widgets.Button(description=T['import_file'])
-btn_export = widgets.Button(description=T['export_file'])
-btn_chart = widgets.Button(description=T['view_chart'])
+inputs_box = widgets.VBox([
+    name_text, position_dropdown, cards_dropdown,
+    interceptions_int, defending_int, blocks_int,
+    goal_prevention_int, negative_goals_int,
+    passes_int, assists_int, shots_int,
+    goals_int, matches_int
+])
 
-btn_add.on_click(add_player)
-btn_show.on_click(show_players)
-btn_clear.on_click(clear_all)
-btn_import.on_click(import_file)
-btn_export.on_click(export_file)
-btn_chart.on_click(show_chart)
-
-input_widgets = [
-    inputs['name'], inputs['position'], inputs['card'], inputs['interceptions'], inputs['defending'],
-    inputs['blocks'], inputs['goal_prevention'], inputs['negative_goals'], inputs['passes'],
-    inputs['assists'], inputs['shots'], inputs['goals'], inputs['matches']
-]
-
-buttons = widgets.HBox([btn_add, btn_show, btn_clear, btn_import, btn_export, btn_chart])
-
-ui = widgets.VBox(input_widgets + [buttons])
-
-display(ui)
-
+display(inputs_box, buttons_box, output)
