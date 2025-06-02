@@ -30,7 +30,7 @@ TEXTS = {
         'no_players': 'لا يوجد لاعبين',
         'rating': 'التقييم',
         'position_choices': ['حارس', 'مدافع', 'وسط', 'مهاجم'],
-        'card_choices': ['لا بطاقة', 'بطاقة صفراء', 'بطاقة حمراء'],
+        'card_choices': ['لا بطاقة', 'بطاقة صفراء','بطاقتين صفراء', 'بطاقة حمراء'],
         'language': 'اللغة',
         'export': 'تصدير',
         'import': 'استيراد',
@@ -59,7 +59,7 @@ TEXTS = {
         'no_players': 'No players',
         'rating': 'Rating',
         'position_choices': ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
-        'card_choices': ['No Card', 'Yellow Card', 'Red Card'],
+        'card_choices': ['No Card', 'Yellow Card','Two Yellow Cards', 'Red Card'],
         'language': 'Language',
         'export': 'Export',
         'import': 'Import',
@@ -105,12 +105,15 @@ class Player:
         weights = w[self.position]
         card_penalty = 0
         if self.card in ['بطاقة صفراء', 'Yellow Card']:
-            card_penalty = weights['cards'] * 1
+         card_penalty = weights['cards'] * 1
+        elif self.card in ['بطاقتين صفراء', 'Two Yellow Cards']:
+         card_penalty = weights['cards'] * 2
         elif self.card in ['بطاقة حمراء', 'Red Card']:
-            card_penalty = weights['cards'] * 3
+         card_penalty = weights['cards'] * 3
+
 
         raw = (
-            self.goals * weights['goals'] + 
+            self.goals * weights['goals'] +
             self.assists * weights['assists'] +
             self.passes * weights['passes'] +
             self.interceptions * weights['interceptions'] +
