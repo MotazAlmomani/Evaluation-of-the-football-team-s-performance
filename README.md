@@ -225,6 +225,27 @@ def clear_inputs():
     goals_int.value = 0
     matches_int.value = 1
 
+def rating_description(rating: float) -> str:
+    # تحديد التقييم الوصفي حسب القيمة الرقمية، مع دعم اللغة
+    if current_lang == 'ar':
+        if rating < 3:
+            return "ضعيف"
+        elif rating < 6:
+            return "متوسط"
+        elif rating < 8:
+            return "جيد"
+        else:
+            return "جيد جداً"
+    else:  # الإنجليزية
+        if rating < 3:
+            return "Poor"
+        elif rating < 6:
+            return "Average"
+        elif rating < 8:
+            return "Good"
+        else:
+            return "Very Good"
+
 def show_players_table():
     with output:
         clear_output()
@@ -245,9 +266,11 @@ def show_players_table():
             get_text('shots'): p.shots,
             get_text('goals'): p.goals,
             get_text('matches'): p.matches,
-            get_text('rating'): p.rating
+            get_text('rating'): p.rating,
+            get_text('rating') + ' ' + ('وصف' if current_lang=='ar' else 'Description'): rating_description(p.rating)
         } for p in players])
         display(df)
+
 
 def clear_all_clicked(_):
     players.clear()
